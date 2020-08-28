@@ -1,32 +1,29 @@
-package com.example.localizacion;
+package com.example.myapplication2;
 
-import androidx.annotation.NonNull;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
-
-import android.Manifest;
-
-import android.content.pm.PackageManager;
-
-import android.os.Bundle;
 import android.os.Handler;
-import android.os.Looper;
 import android.os.Message;
-
+import androidx.appcompat.app.AppCompatActivity;
+import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.ProgressBar;
 import android.widget.Toast;
-
 import com.google.android.gms.location.LocationCallback;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
-import android.os.Message;
 
+import androidx.annotation.NonNull;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.os.Bundle;
+import android.os.Looper;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -35,41 +32,25 @@ import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 
-
-import android.os.Bundle;
-
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.net.Socket;
-import java.sql.Time;
-import java.text.SimpleDateFormat;
-import java.util.Calendar;
-import android.os.Handler;
-
 public class MainActivity extends AppCompatActivity {
-    private static final int REQUEST_CODE_LOCATION_PERMISSION = 1;
-    private TextView Latitude, TimeStamp;
-    private ProgressBar progressBar;
 
     EditText editTextAddress, editTextPort;
     Button buttonConnect;
     TextView textViewState, textViewRx;
+    private static final int REQUEST_CODE_LOCATION_PERMISSION = 1;
+    private TextView Latitude, TimeStamp;
+    private ProgressBar progressBar;
+    String Mensaje, Mensaje2, TString;
 
+    byte [] DataByte;
 
-
-
-
-
+    UdpClientHandler udpClientHandler;
+    UdpClientThread udpClientThread;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        Latitude = findViewById(R.id.Latitude);
-        progressBar = findViewById(R.id.progressbar);
-        TimeStamp = findViewById(R.id.TimeStamp);
-
 
         editTextAddress = (EditText) findViewById(R.id.address);
         editTextPort = (EditText) findViewById(R.id.port);
@@ -77,21 +58,14 @@ public class MainActivity extends AppCompatActivity {
         textViewState = (TextView)findViewById(R.id.state);
         textViewRx = (TextView)findViewById(R.id.received);
 
+        buttonConnect.setOnClickListener(buttonConnectOnClickListener);
+
+        udpClientHandler = new UdpClientHandler(this);
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+        Latitude = findViewById(R.id.Latitude);
+        progressBar = findViewById(R.id.progressbar);
+        TimeStamp = findViewById(R.id.TimeStamp);
 
 
 
@@ -108,19 +82,14 @@ public class MainActivity extends AppCompatActivity {
                     String dateTime = simpleDateFormat.format(calendar.getTime());
                     TimeStamp.setText(dateTime);
 
+
+
+
                 }
 
             }
         });
-
     }
-
-
-
-
-
-
-
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
@@ -134,6 +103,141 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+
+
+    View.OnClickListener buttonConnectOnClickListener =
+            new View.OnClickListener() {
+
+                @Override
+                public void onClick(View arg0) {
+
+                    udpClientThread = new UdpClientThread(
+                            editTextAddress.getText().toString(),
+                            Integer.parseInt(editTextPort.getText().toString()),
+                            udpClientHandler);
+                    udpClientThread.start();
+
+                    buttonConnect.setEnabled(true);
+                }
+            };
+
+    private void updateState(String state){
+        textViewState.setText(state);
+    }
+
+    private void updateRxMsg(String rxmsg){
+        textViewRx.append(rxmsg + "\n");
+    }
+
+    private void clientEnd(){
+        udpClientThread = null;
+        textViewState.setText("clientEnd()");
+        buttonConnect.setEnabled(true);
+
+    }
+
+    public static class UdpClientHandler extends Handler {
+        public static final int UPDATE_STATE = 0;
+        public static final int UPDATE_MSG = 1;
+        public static final int UPDATE_END = 2;
+        private MainActivity parent;
+
+        public UdpClientHandler(MainActivity parent) {
+            super();
+            this.parent = parent;
+        }
+
+        @Override
+        public void handleMessage(Message msg) {
+
+            switch (msg.what){
+                case UPDATE_STATE:
+                    parent.updateState((String)msg.obj);
+                    break;
+                case UPDATE_MSG:
+                    parent.updateRxMsg((String)msg.obj);
+                    break;
+                case UPDATE_END:
+                    parent.clientEnd();
+                    break;
+                default:
+                    super.handleMessage(msg);
+            }
+
+        }
+    }
+    public class UdpClientThread extends Thread{
+
+        String dstAddress;
+        int dstPort;
+        private boolean running;
+        MainActivity.UdpClientHandler handler;
+
+        DatagramSocket socket;
+        InetAddress address;
+
+        public UdpClientThread(String addr, int port, MainActivity.UdpClientHandler handler) {
+            super();
+            dstAddress = addr;
+            dstPort = port;
+            this.handler = handler;
+        }
+
+        public void setRunning(boolean running){
+            this.running = running;
+        }
+
+        private void sendState(String state){
+            handler.sendMessage(
+                    Message.obtain(handler,
+                            MainActivity.UdpClientHandler.UPDATE_STATE, state));
+        }
+
+        @Override
+        public void run() {
+            sendState("connecting...");
+
+            running = true;
+
+            try {
+                socket = new DatagramSocket();
+                address = InetAddress.getByName(dstAddress);
+                DataByte = Mensaje2.getBytes();
+
+                // send request
+
+
+                DatagramPacket packet =
+                        new DatagramPacket(DataByte, DataByte.length, address, dstPort);
+                socket.send(packet);
+
+                sendState("connected");
+
+                // get response
+                packet = new DatagramPacket(DataByte, DataByte.length);
+
+
+                socket.receive(packet);
+                String line = new String(packet.getData(), 0, packet.getLength());
+
+                handler.sendMessage(
+                        Message.obtain(handler, MainActivity.UdpClientHandler.UPDATE_MSG, line));
+
+            } catch (SocketException e) {
+                e.printStackTrace();
+            } catch (UnknownHostException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            } finally {
+                if(socket != null){
+                    socket.close();
+                    handler.sendEmptyMessage(MainActivity.UdpClientHandler.UPDATE_END);
+                }
+            }
+
+        }
+    }
     private void getCurrentLocation() {
 
         progressBar.setVisibility(View.VISIBLE);
@@ -175,12 +279,9 @@ public class MainActivity extends AppCompatActivity {
                     double longitude = locationResult.getLocations().get(latestLocationIndex).getLongitude();
                     Latitude.setText(String.format("Latitude:%s\nLongitude: %s", latitude, longitude));
 
-
-
-
-
-
-
+                    Mensaje = Latitude.getText().toString();
+                    TString = TimeStamp.getText().toString();
+                    Mensaje2 = Mensaje + TString;
 
 
 
@@ -188,7 +289,7 @@ public class MainActivity extends AppCompatActivity {
 
 
                 }
-                    progressBar.setVisibility(View.GONE);
+                progressBar.setVisibility(View.GONE);
 
 
 
@@ -199,12 +300,5 @@ public class MainActivity extends AppCompatActivity {
 
 
 
-    }}
-
-
-
-
-
-
-
-
+    }
+}
